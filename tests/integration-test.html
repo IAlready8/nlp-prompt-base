@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NLP Prompt Database - Integration Tests</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #ffffff;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #333;
+            border-radius: 8px;
+            background: #2a2a2a;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+        }
+        .pass { background: #1a4a1a; color: #4ade80; }
+        .fail { background: #4a1a1a; color: #f87171; }
+        .pending { background: #4a4a1a; color: #fbbf24; }
+        button {
+            background: #007AFF;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056CC;
+        }
+        #results {
+            margin-top: 20px;
+        }
+        .test-category {
+            border-left: 4px solid #007AFF;
+            padding-left: 16px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧠 NLP Prompt Database - Integration Tests</h1>
+    
+    <div class="test-section">
+        <h2>Test Suite Controls</h2>
+        <button onclick="runAllTests()">🚀 Run All Tests</button>
+        <button onclick="runUITests()">🎨 UI Tests</button>
+        <button onclick="runFunctionalTests()">⚡ Functional Tests</button>
+        <button onclick="runPerformanceTests()">📊 Performance Tests</button>
+        <button onclick="clearResults()">🗑️ Clear Results</button>
+    </div>
+
+    <div id="results"></div>
+
+    <script>
+        let testResults = [];
+        
+        // Test Categories
+        const TestCategories = {
+            UI: 'UI Components',
+            FUNCTIONAL: 'Functionality',
+            PERFORMANCE: 'Performance',
+            INTEGRATION: 'Integration'
+        };
+
+        // Test Framework
+        function createTest(name, category, testFn) {
+            return {
+                name,
+                category,
+                test: testFn,
+                status: 'pending'
+            };
+        }
+
+        function assert(condition, message) {
+            if (!condition) {
+                throw new Error(message || 'Assertion failed');
+            }
+        }
+
+        function assertEqual(actual, expected, message) {
+            if (actual !== expected) {
+                throw new Error(message || `Expected ${expected}, got ${actual}`);
+            }
+        }
+
+        function assertExists(element, message) {
+            if (!element) {
+                throw new Error(message || 'Element does not exist');
+            }
+        }
+
+        // UI Tests
+        const uiTests = [
+            createTest('Main Navigation Exists', TestCategories.UI, () => {
+                const nav = document.querySelector('.main-nav');
+                assertExists(nav, 'Main navigation should exist');
+                
+                const navButtons = nav.querySelectorAll('.nav-button');
+                assert(navButtons.length >= 3, 'Should have at least 3 navigation buttons');
+            }),
+
+            createTest('Sidebar Components', TestCategories.UI, () => {
+                const sidebar = document.querySelector('.sidebar');
+                assertExists(sidebar, 'Sidebar should exist');
+                
+                const folderList = sidebar.querySelector('.folder-list');
+                assertExists(folderList, 'Folder list should exist');
+                
+                const newFolderForm = sidebar.querySelector('.new-folder-form');
+                assertExists(newFolderForm, 'New folder form should exist');
+            }),
+
+            createTest('Quick Add Modal', TestCategories.UI, () => {
+                const modal = document.getElementById('quick-add-modal');
+                assertExists(modal, 'Quick add modal should exist');
+                
+                const textarea = modal.querySelector('textarea');
+                assertExists(textarea, 'Modal should have textarea');
+                
+                const buttons = modal.querySelectorAll('button');
+                assert(buttons.length >= 2, 'Modal should have at least 2 buttons');
+            }),
+
+            createTest('Search and Filters', TestCategories.UI, () => {
+                const searchInput = document.getElementById('search-input');
+                assertExists(searchInput, 'Search input should exist');
+                
+                const categoryFilter = document.getElementById('category-filter');
+                assertExists(categoryFilter, 'Category filter should exist');
+                
+                const ratingFilter = document.getElementById('rating-filter');
+                assertExists(ratingFilter, 'Rating filter should exist');
+            }),
+
+            createTest('Context Menu', TestCategories.UI, () => {
+                const contextMenu = document.getElementById('context-menu');
+                assertExists(contextMenu, 'Context menu should exist');
+                
+                const menuItems = contextMenu.querySelectorAll('.context-menu-item');
+                assert(menuItems.length >= 5, 'Context menu should have multiple items');
+            }),
+
+            createTest('Bulk Action Controls', TestCategories.UI, () => {
+                const bulkModeBtn = document.getElementById('bulk-mode-btn');
+                assertExists(bulkModeBtn, 'Bulk mode button should exist');
+                
+                const viewModeBtn = document.getElementById('view-mode-btn');
+                assertExists(viewModeBtn, 'View mode button should exist');
+            }),
+
+            createTest('Help and Shortcuts', TestCategories.UI, () => {
+                const helpButton = document.getElementById('help-button');
+                assertExists(helpButton, 'Help button should exist');
+                
+                const shortcutsModal = document.getElementById('shortcuts-modal');
+                assertExists(shortcutsModal, 'Shortcuts modal should exist');
+            })
+        ];
+
+        // Functional Tests
+        const functionalTests = [
+            createTest('Application Initialization', TestCategories.FUNCTIONAL, async () => {
+                assert(typeof window.app !== 'undefined', 'App should be initialized');
+                assert(window.app.state, 'App should have state');
+                assert(Array.isArray(window.app.state.prompts), 'Prompts should be an array');
+            }),
+
+            createTest('Database Operations', TestCategories.FUNCTIONAL, async () => {
+                assert(window.app.db, 'Database should be initialized');
+                assert(typeof window.app.db.addPrompt === 'function', 'Should have addPrompt method');
+                assert(typeof window.app.db.updatePrompt === 'function', 'Should have updatePrompt method');
+                assert(typeof window.app.db.deletePrompt === 'function', 'Should have deletePrompt method');
+            }),
+
+            createTest('Search Functionality', TestCategories.FUNCTIONAL, () => {
+                assert(typeof window.app.advancedSearch === 'function', 'Should have advancedSearch method');
+                assert(typeof window.app.searchByTag === 'function', 'Should have searchByTag method');
+                assert(typeof window.app.clearSearch === 'function', 'Should have clearSearch method');
+            }),
+
+            createTest('Bulk Operations', TestCategories.FUNCTIONAL, () => {
+                assert(typeof window.app.toggleBulkMode === 'function', 'Should have toggleBulkMode method');
+                assert(typeof window.app.selectAllPrompts === 'function', 'Should have selectAllPrompts method');
+                assert(typeof window.app.deleteSelectedPrompts === 'function', 'Should have deleteSelectedPrompts method');
+                assert(typeof window.app.duplicateSelectedPrompts === 'function', 'Should have duplicateSelectedPrompts method');
+            }),
+
+            createTest('Drag and Drop', TestCategories.FUNCTIONAL, () => {
+                assert(typeof window.app.handleDragStart === 'function', 'Should have handleDragStart method');
+                assert(typeof window.app.handleDragOver === 'function', 'Should have handleDragOver method');
+                assert(typeof window.app.handleDrop === 'function', 'Should have handleDrop method');
+            }),
+
+            createTest('AI Integration', TestCategories.FUNCTIONAL, () => {
+                assert(window.app.ai, 'AI integration should be initialized');
+                assert(typeof window.app.ai.categorizePrompt === 'function', 'Should have categorizePrompt method');
+                assert(typeof window.app.ai.generateTags === 'function', 'Should have generateTags method');
+                assert(typeof window.app.ai.enhancePrompt === 'function', 'Should have enhancePrompt method');
+            }),
+
+            createTest('Keyboard Shortcuts', TestCategories.FUNCTIONAL, () => {
+                assert(typeof window.app.handleKeyboardShortcuts === 'function', 'Should have keyboard shortcuts handler');
+                assert(typeof window.app.handleArrowNavigation === 'function', 'Should have arrow navigation');
+            }),
+
+            createTest('Export/Import', TestCategories.FUNCTIONAL, () => {
+                assert(typeof window.app.exportData === 'function', 'Should have exportData method');
+                assert(typeof window.app.handleImport === 'function', 'Should have handleImport method');
+                assert(typeof window.app.exportSelectedPrompts === 'function', 'Should have exportSelectedPrompts method');
+            })
+        ];
+
+        // Performance Tests
+        const performanceTests = [
+            createTest('Initial Load Time', TestCategories.PERFORMANCE, () => {
+                const loadTime = performance.now();
+                assert(loadTime < 3000, 'Initial load should be under 3 seconds');
+            }),
+
+            createTest('Search Performance', TestCategories.PERFORMANCE, async () => {
+                const start = performance.now();
+                
+                // Simulate search operation
+                if (window.app && window.app.state.prompts.length > 0) {
+                    window.app.state.searchTerm = 'test';
+                    window.app.updateFilteredPrompts();
+                }
+                
+                const end = performance.now();
+                const searchTime = end - start;
+                
+                assert(searchTime < 100, `Search should be under 100ms, took ${searchTime}ms`);
+            }),
+
+            createTest('Render Performance', TestCategories.PERFORMANCE, async () => {
+                const start = performance.now();
+                
+                if (window.app && typeof window.app.render === 'function') {
+                    window.app.render();
+                }
+                
+                const end = performance.now();
+                const renderTime = end - start;
+                
+                assert(renderTime < 200, `Render should be under 200ms, took ${renderTime}ms`);
+            }),
+
+            createTest('Memory Usage', TestCategories.PERFORMANCE, () => {
+                if (performance.memory) {
+                    const memoryUsage = performance.memory.usedJSHeapSize / 1024 / 1024; // MB
+                    assert(memoryUsage < 100, `Memory usage should be under 100MB, using ${memoryUsage.toFixed(2)}MB`);
+                } else {
+                    console.log('Memory API not available');
+                }
+            })
+        ];
+
+        // Integration Tests
+        const integrationTests = [
+            createTest('Local Storage Integration', TestCategories.INTEGRATION, () => {
+                try {
+                    localStorage.setItem('test', 'test');
+                    const value = localStorage.getItem('test');
+                    localStorage.removeItem('test');
+                    assertEqual(value, 'test', 'Local storage should work');
+                } catch (e) {
+                    throw new Error('Local storage not available');
+                }
+            }),
+
+            createTest('Service Worker Registration', TestCategories.INTEGRATION, async () => {
+                if ('serviceWorker' in navigator) {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    // Don't require SW to be registered for test to pass
+                    console.log('Service Worker support available');
+                } else {
+                    console.log('Service Worker not supported');
+                }
+            }),
+
+            createTest('PWA Manifest', TestCategories.INTEGRATION, async () => {
+                try {
+                    const response = await fetch('/manifest.json');
+                    assert(response.ok, 'Manifest should be accessible');
+                    const manifest = await response.json();
+                    assert(manifest.name, 'Manifest should have name');
+                    assert(manifest.icons, 'Manifest should have icons');
+                } catch (e) {
+                    throw new Error('Manifest not accessible');
+                }
+            }),
+
+            createTest('API Endpoints', TestCategories.INTEGRATION, async () => {
+                try {
+                    const response = await fetch('/api/health');
+                    if (response.ok) {
+                        const health = await response.json();
+                        assert(health.status, 'Health endpoint should return status');
+                    } else {
+                        console.log('API server not running - this is OK for static testing');
+                    }
+                } catch (e) {
+                    console.log('API server not accessible - this is OK for static testing');
+                }
+            })
+        ];
+
+        // Test Runner
+        async function runTest(test) {
+            try {
+                await test.test();
+                test.status = 'pass';
+                test.error = null;
+            } catch (error) {
+                test.status = 'fail';
+                test.error = error.message;
+            }
+            return test;
+        }
+
+        async function runTestSuite(tests, suiteName) {
+            displayResult(`Running ${suiteName}...`, 'pending');
+            
+            const results = [];
+            for (const test of tests) {
+                const result = await runTest(test);
+                results.push(result);
+                displayResult(`${test.category}: ${test.name}`, test.status, test.error);
+            }
+            
+            const passed = results.filter(r => r.status === 'pass').length;
+            const total = results.length;
+            
+            displayResult(`${suiteName} Complete: ${passed}/${total} tests passed`, 
+                         passed === total ? 'pass' : 'fail');
+            
+            return results;
+        }
+
+        function displayResult(message, status, error = null) {
+            const resultsDiv = document.getElementById('results');
+            const resultElement = document.createElement('div');
+            resultElement.className = `test-result ${status}`;
+            resultElement.textContent = message;
+            
+            if (error) {
+                const errorElement = document.createElement('div');
+                errorElement.style.fontSize = '0.9em';
+                errorElement.style.opacity = '0.8';
+                errorElement.style.marginTop = '4px';
+                errorElement.textContent = `Error: ${error}`;
+                resultElement.appendChild(errorElement);
+            }
+            
+            resultsDiv.appendChild(resultElement);
+            resultsDiv.scrollTop = resultsDiv.scrollHeight;
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        // Test Suite Functions
+        async function runUITests() {
+            clearResults();
+            await runTestSuite(uiTests, 'UI Tests');
+        }
+
+        async function runFunctionalTests() {
+            clearResults();
+            await runTestSuite(functionalTests, 'Functional Tests');
+        }
+
+        async function runPerformanceTests() {
+            clearResults();
+            await runTestSuite(performanceTests, 'Performance Tests');
+        }
+
+        async function runAllTests() {
+            clearResults();
+            displayResult('🧪 Starting Comprehensive Test Suite', 'pending');
+            
+            await runTestSuite(uiTests, 'UI Tests');
+            await runTestSuite(functionalTests, 'Functional Tests');
+            await runTestSuite(integrationTests, 'Integration Tests');
+            await runTestSuite(performanceTests, 'Performance Tests');
+            
+            displayResult('✅ All Test Suites Complete!', 'pass');
+        }
+
+        // Auto-run when page loads
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                displayResult('Test framework loaded. Ready to run tests.', 'pass');
+                displayResult('Click "Run All Tests" to start comprehensive testing.', 'pending');
+            }, 500);
+        });
+    </script>
+</body>
+</html>

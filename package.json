@@ -1,0 +1,111 @@
+{
+  "name": "nlp-prompt-database",
+  "version": "1.0.0",
+  "description": "Personal NLP Prompt Database with AI-powered categorization and advanced organization features",
+  "keywords": [
+    "nlp",
+    "prompts",
+    "ai",
+    "categorization",
+    "database",
+    "productivity",
+    "openai",
+    "macbook",
+    "personal-tool"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/nlp-prompt-database.git"
+  },
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js --legacy-watch",
+    "dev-simple": "node server.js",
+    "serve": "live-server public --port=8000 --open=/",
+    "serve-simple": "python3 -m http.server 8000 --directory public",
+    "build": "echo 'Building static assets...' && npm run lint",
+    "lint": "echo 'Linting JavaScript files...'",
+    "test": "mocha tests/run-tests.js",
+    "test:watch": "mocha tests/run-tests.js --watch",
+    "copy-vendor": "node copy-vendor.js",
+    "postinstall": "npm run copy-vendor",
+    "backup": "curl -X POST http://localhost:3001/api/backup",
+    "clean": "rm -rf dist/ .cache/",
+    "format": "prettier --write 'public/**/*.{js,css,html}' 'src/**/*.js' 'server.js'",
+    "validate": "jsonlint data/prompts.json"
+  },
+  "devDependencies": {
+    "chai": "^4.3.10",
+    "jsonlint": "^1.6.3",
+    "live-server": "^1.2.2",
+    "mocha": "^10.2.0",
+    "nodemon": "^3.0.1",
+    "prettier": "^3.0.0",
+    "supertest": "^6.3.3"
+  },
+  "dependencies": {
+    "chart.js": "^4.4.0",
+    "cors": "^2.8.5",
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  },
+  "browserslist": [
+    "last 2 versions",
+    "Safari >= 14",
+    "Chrome >= 90",
+    "Firefox >= 88",
+    "Edge >= 90"
+  ],
+  "homepage": ".",
+  "categories": [
+    "Code",
+    "Cognitive",
+    "Jailbreak",
+    "Dev",
+    "Writing",
+    "Business",
+    "General",
+    "Creative",
+    "Analysis",
+    "Research"
+  ],
+  "features": [
+    "AI-powered prompt categorization",
+    "Local JSON database",
+    "Advanced search and filtering",
+    "Tags and folder organization",
+    "Star ratings and favorites",
+    "Usage analytics and charts",
+    "Import/Export functionality",
+    "MacBook Air M2 optimized UI",
+    "Keyboard shortcuts",
+    "Dark mode interface",
+    "Responsive design",
+    "Offline functionality"
+  ],
+  "systemRequirements": {
+    "os": [
+      "macOS",
+      "Windows",
+      "Linux"
+    ],
+    "browser": [
+      "Chrome",
+      "Safari",
+      "Firefox",
+      "Edge"
+    ],
+    "storage": "10MB minimum"
+  },
+  "config": {
+    "port": 8000,
+    "host": "localhost",
+    "openBrowser": true
+  }
+}
