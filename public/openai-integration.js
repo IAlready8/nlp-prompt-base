@@ -2,7 +2,8 @@ class OpenAIIntegration {
     constructor(apiKey = '') {
         this.apiKey = apiKey;
         this.baseURL = 'https://api.openai.com/v1';
-        this.model = 'gpt-3.5-turbo';
+        this.model = window.config?.openai?.model || 'gpt-3.5-turbo';
+        this.maxTokens = window.config?.openai?.maxTokens || 2000;
     }
 
     setApiKey(apiKey) {

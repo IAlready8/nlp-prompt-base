@@ -4,7 +4,11 @@
       "id": "prompt_sample_1",
       "text": "You are a helpful coding assistant. Help me debug this JavaScript function and explain what might be wrong with it.",
       "category": "Code",
-      "tags": ["javascript", "debugging", "help"],
+      "tags": [
+        "javascript",
+        "debugging",
+        "help"
+      ],
       "folder": "Default",
       "rating": 4,
       "createdAt": "2025-07-02T10:00:00.000Z",
@@ -13,14 +17,19 @@
       "notes": "Great for debugging sessions",
       "metadata": {
         "source": "manual",
-        "confidence": 1.0
+        "confidence": 1
       }
     },
     {
       "id": "prompt_sample_2",
       "text": "Write a creative story about a robot who discovers emotions for the first time. Make it heartwarming and thought-provoking.",
       "category": "Creative",
-      "tags": ["storytelling", "robot", "emotions", "creative writing"],
+      "tags": [
+        "storytelling",
+        "robot",
+        "emotions",
+        "creative writing"
+      ],
       "folder": "Favorites",
       "rating": 5,
       "createdAt": "2025-07-02T11:00:00.000Z",
@@ -29,14 +38,19 @@
       "notes": "Perfect for creative writing exercises",
       "metadata": {
         "source": "manual",
-        "confidence": 1.0
+        "confidence": 1
       }
     },
     {
       "id": "prompt_sample_3",
       "text": "Analyze the market trends for sustainable technology startups in 2025. Provide insights on investment opportunities and growth potential.",
       "category": "Business",
-      "tags": ["market analysis", "sustainability", "startups", "investment"],
+      "tags": [
+        "market analysis",
+        "sustainability",
+        "startups",
+        "investment"
+      ],
       "folder": "Default",
       "rating": 4,
       "createdAt": "2025-07-02T12:00:00.000Z",
@@ -45,12 +59,29 @@
       "notes": "Good for business planning",
       "metadata": {
         "source": "manual",
-        "confidence": 1.0
+        "confidence": 1
       }
     }
   ],
-  "categories": ["All", "Code", "Cognitive", "Jailbreak", "Dev", "Writing", "Business", "General", "Creative", "Analysis", "Research"],
-  "folders": ["All", "Favorites", "Archive", "Default"],
+  "categories": [
+    "All",
+    "Code",
+    "Cognitive",
+    "Jailbreak",
+    "Dev",
+    "Writing",
+    "Business",
+    "General",
+    "Creative",
+    "Analysis",
+    "Research"
+  ],
+  "folders": [
+    "All",
+    "Favorites",
+    "Archive",
+    "Default"
+  ],
   "customFolders": [],
   "settings": {
     "openaiApiKey": "",
@@ -61,6 +92,6 @@
     "version": "1.0.0",
     "created": "2025-07-02",
     "totalPrompts": 3,
-    "lastSaved": "2025-07-03T13:10:00.000Z"
+    "lastSaved": "2025-07-20T10:30:13.581Z"
   }
 }

@@ -98,6 +98,12 @@ class NLPPromptDatabase {
         document.addEventListener('contextmenu', this.handleContextMenu.bind(this));
         document.addEventListener('click', this.hideContextMenu.bind(this));
         
+        // Command palette
+        this.setupCommandPalette();
+        
+        // Enhanced search
+        this.setupEnhancedSearch();
+        
         // Connection monitoring
         this.monitorConnection();
         
@@ -208,6 +214,10 @@ class NLPPromptDatabase {
     handleKeyboardShortcuts(e) {
         if (e.metaKey || e.ctrlKey) {
             switch (e.key) {
+                case 'k':
+                    e.preventDefault();
+                    this.toggleCommandPalette();
+                    break;
                 case 'n':
                     e.preventDefault();
                     this.showQuickAddModal();
@@ -309,58 +319,89 @@ class NLPPromptDatabase {
             const promptTexts = text.split('---').map(p => p.trim()).filter(p => p);
             const addedPrompts = [];
             
+            const skippedPrompts = [];
+            
             for (const promptText of promptTexts) {
-                let category = 'General';
-                let tags = [];
-                let enhancedText = promptText;
-                
-                // Check auto-enhance option
-                if (document.getElementById('auto-enhance')?.checked && this.state.settings.openaiApiKey) {
-                    try {
-                        const enhanced = await this.ai.enhancePrompt(promptText);
-                        enhancedText = enhanced.enhanced || promptText;
-                    } catch (error) {
-                        console.warn('Enhancement failed:', error);
+                try {
+                    let category = 'General';
+                    let tags = [];
+                    let enhancedText = promptText;
+                    
+                    // Check auto-enhance option
+                    if (document.getElementById('auto-enhance')?.checked && this.state.settings.openaiApiKey) {
+                        try {
+                            const enhanced = await this.ai.enhancePrompt(promptText);
+                            enhancedText = enhanced.enhanced || promptText;
+                        } catch (error) {
+                            console.warn('Enhancement failed:', error);
+                        }
+                    }
+
+                    // Auto-categorization
+                    if (document.getElementById('auto-categorize')?.checked && this.state.settings.openaiApiKey && this.state.settings.autoCategorizationEnabled) {
+                        category = await this.ai.categorizePrompt(enhancedText);
+                    } else {
+                        category = this.ai.fallbackCategorization(enhancedText);
+                    }
+
+                    // Auto-tagging
+                    if (document.getElementById('auto-tag')?.checked && this.state.settings.openaiApiKey && this.state.settings.autoTagsEnabled) {
+                        tags = await this.ai.generateTags(enhancedText);
+                    } else {
+                        tags = this.ai.fallbackTagGeneration(enhancedText);
+                    }
+
+                    const newPrompt = await this.db.addPrompt({
+                        text: enhancedText,
+                        category: category,
+                        tags: tags,
+                        folder: 'Default',
+                        rating: 0,
+                        notes: promptText !== enhancedText ? `Original: ${promptText}` : ''
+                    });
+
+                    addedPrompts.push(newPrompt);
+                } catch (error) {
+                    if (error.code === 'DUPLICATE_PROMPT') {
+                        skippedPrompts.push({
+                            text: promptText,
+                            duplicates: error.duplicates
+                        });
+                        console.warn('Duplicate prompt skipped:', promptText);
+                    } else {
+                        throw error; // Re-throw other errors
                     }
                 }
-
-                // Auto-categorization
-                if (document.getElementById('auto-categorize')?.checked && this.state.settings.openaiApiKey && this.state.settings.autoCategorizationEnabled) {
-                    category = await this.ai.categorizePrompt(enhancedText);
-                } else {
-                    category = this.ai.fallbackCategorization(enhancedText);
-                }
-
-                // Auto-tagging
-                if (document.getElementById('auto-tag')?.checked && this.state.settings.openaiApiKey && this.state.settings.autoTagsEnabled) {
-                    tags = await this.ai.generateTags(enhancedText);
-                } else {
-                    tags = this.ai.fallbackTagGeneration(enhancedText);
-                }
-
-                const newPrompt = await this.db.addPrompt({
-                    text: enhancedText,
-                    category: category,
-                    tags: tags,
-                    folder: 'Default',
-                    rating: 0,
-                    notes: promptText !== enhancedText ? `Original: ${promptText}` : ''
-                });
-
-                addedPrompts.push(newPrompt);
             }
             
-            this.state.prompts.unshift(...addedPrompts);
-            this.state.allTags = await this.db.getAllTags();
-            this.updateFilteredPrompts();
+            // Reload data from database instead of manually adding to state
+            await this.loadData();
             this.hideQuickAddModal();
-            this.markAsChanged();
-            this.render();
             
-            const message = addedPrompts.length === 1 
-                ? `Prompt added and categorized as "${addedPrompts[0].category}"`
-                : `Added ${addedPrompts.length} prompts successfully`;
-            this.showToast(message, 'success');
+            // Show results with duplicate information
+            let message = '';
+            
+            if (addedPrompts.length > 0 && skippedPrompts.length === 0) {
+                message = addedPrompts.length === 1 
+                    ? `Prompt added and categorized as "${addedPrompts[0].category}"`
+                    : `Added ${addedPrompts.length} prompts successfully`;
+                this.showToast(message, 'success');
+            } else if (addedPrompts.length === 0 && skippedPrompts.length > 0) {
+                message = skippedPrompts.length === 1 
+                    ? 'Prompt already exists - duplicate skipped'
+                    : `All ${skippedPrompts.length} prompts already exist - duplicates skipped`;
+                this.showToast(message, 'warning');
+                this.showDuplicateModal(skippedPrompts);
+            } else if (addedPrompts.length > 0 && skippedPrompts.length > 0) {
+                message = `Added ${addedPrompts.length} new prompts, skipped ${skippedPrompts.length} duplicates`;
+                this.showToast(message, 'info');
+                this.showDuplicateModal(skippedPrompts);
+            }
+            
+            // Only hide modal if something was actually processed
+            if (addedPrompts.length > 0 || skippedPrompts.length > 0) {
+                this.hideQuickAddModal();
+            }
         } catch (error) {
             console.error('Failed to add prompt:', error);
             this.showToast('Failed to add prompt', 'error');
@@ -430,42 +471,226 @@ class NLPPromptDatabase {
 
         const allFolders = [...this.state.folders, ...this.state.customFolders];
         const folderCounts = this.getFolderCounts();
+        const recentPrompts = this.getRecentPrompts(3);
+        const categoryStats = this.getCategoryStats();
 
         sidebar.innerHTML = `
             <div class="sidebar-header">
                 <h2>📁 Folders</h2>
-                <button id="sidebar-toggle-btn">«</button>
+                <button id="sidebar-toggle-btn" class="sidebar-toggle" title="Toggle Sidebar">«</button>
             </div>
-            <div class="folder-list">
-                ${allFolders.map(folder => `
-                    <button class="folder-btn ${this.state.activeFolder === folder ? 'active' : ''}" 
-                            data-folder="${folder}">
-                        <span class="folder-icon">${folder === 'Favorites' ? '⭐' : folder === 'Archive' ? '📦' : '📁'}</span>
-                        <span class="folder-name">${folder}</span>
-                        <span class="folder-count">${folderCounts[folder] || 0}</span>
-                    </button>
-                `).join('')}
-            </div>
-            <form class="new-folder-form">
-                <input type="text" placeholder="New folder..." required>
-                <button type="submit">+</button>
-            </form>
             
-            <div class="sidebar-section">
-                <h3>🏷️ Tags</h3>
-                <div class="tag-cloud">
-                    ${this.state.allTags.slice(0, 15).map(tag => `
-                        <button class="tag-chip ${this.state.selectedTags.includes(tag) ? 'active' : ''}" 
-                                data-tag="${tag}">
-                            ${tag}
-                        </button>
-                    `).join('')}
+            <div class="sidebar-content">
+                <div class="folder-section">
+                    <div class="folder-list">
+                        ${allFolders.map(folder => `
+                            <button class="folder-btn ${this.state.activeFolder === folder ? 'active' : ''}" 
+                                    data-folder="${folder}">
+                                <span class="folder-icon">${this.getFolderIcon(folder)}</span>
+                                <span class="folder-name">${folder}</span>
+                                <span class="folder-count">${folderCounts[folder] || 0}</span>
+                                ${folderCounts[folder] > 0 ? `<div class="folder-activity-bar" style="width: ${Math.min((folderCounts[folder] / Math.max(...Object.values(folderCounts))) * 100, 100)}%"></div>` : ''}
+                            </button>
+                        `).join('')}
+                    </div>
+                    <form class="new-folder-form">
+                        <input type="text" placeholder="➕ New folder..." required>
+                        <button type="submit" title="Create Folder">+</button>
+                    </form>
                 </div>
-                ${this.state.selectedTags.length > 0 ? `
-                    <button class="clear-tags-btn">Clear filters</button>
-                ` : ''}
+                
+                <div class="sidebar-section collapsible ${this.getSidebarSectionState('recent') ? 'expanded' : 'collapsed'}">
+                    <div class="section-header" data-section="recent">
+                        <h3>🕒 Recent</h3>
+                        <span class="section-toggle">${this.getSidebarSectionState('recent') ? '−' : '+'}</span>
+                    </div>
+                    <div class="section-content">
+                        <div class="recent-prompts">
+                            ${recentPrompts.length > 0 ? recentPrompts.map(prompt => `
+                                <div class="recent-prompt-item" data-id="${prompt.id}" title="${prompt.text.substring(0, 100)}...">
+                                    <div class="recent-prompt-category">${prompt.category}</div>
+                                    <div class="recent-prompt-text">${prompt.text.substring(0, 40)}${prompt.text.length > 40 ? '...' : ''}</div>
+                                    <div class="recent-prompt-time">${this.getRelativeTime(prompt.updatedAt)}</div>
+                                </div>
+                            `).join('') : '<div class="empty-state">No recent prompts</div>'}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="sidebar-section collapsible ${this.getSidebarSectionState('stats') ? 'expanded' : 'collapsed'}">
+                    <div class="section-header" data-section="stats">
+                        <h3>📊 Quick Stats</h3>
+                        <span class="section-toggle">${this.getSidebarSectionState('stats') ? '−' : '+'}</span>
+                    </div>
+                    <div class="section-content">
+                        <div class="quick-stats">
+                            <div class="stat-item">
+                                <span class="stat-label">Total</span>
+                                <span class="stat-value">${this.state.prompts.length}</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">This Week</span>
+                                <span class="stat-value">${this.getPromptsThisWeek()}</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Avg Rating</span>
+                                <span class="stat-value">${this.getAverageRating().toFixed(1)}</span>
+                            </div>
+                        </div>
+                        <div class="category-mini-stats">
+                            ${Object.entries(categoryStats).slice(0, 4).map(([category, count]) => `
+                                <div class="mini-stat" data-category="${category}">
+                                    <div class="mini-stat-bar" style="width: ${(count / Math.max(...Object.values(categoryStats))) * 100}%"></div>
+                                    <span class="mini-stat-label">${category}</span>
+                                    <span class="mini-stat-count">${count}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="sidebar-section collapsible ${this.getSidebarSectionState('tags') ? 'expanded' : 'collapsed'}">
+                    <div class="section-header" data-section="tags">
+                        <h3>🏷️ Tags</h3>
+                        <span class="section-toggle">${this.getSidebarSectionState('tags') ? '−' : '+'}</span>
+                    </div>
+                    <div class="section-content">
+                        <div class="tag-cloud">
+                            ${this.state.allTags.slice(0, 12).map(tag => {
+                                const tagCount = this.getTagCount(tag);
+                                return `
+                                    <button class="tag-chip ${this.state.selectedTags.includes(tag) ? 'active' : ''}" 
+                                            data-tag="${tag}" title="${tagCount} prompts">
+                                        ${tag}
+                                        <span class="tag-count">${tagCount}</span>
+                                    </button>
+                                `;
+                            }).join('')}
+                            ${this.state.allTags.length > 12 ? `
+                                <button class="tag-chip expand-tags" data-action="expand-tags">
+                                    +${this.state.allTags.length - 12} more
+                                </button>
+                            ` : ''}
+                        </div>
+                        ${this.state.selectedTags.length > 0 ? `
+                            <button class="clear-tags-btn">🗑️ Clear filters (${this.state.selectedTags.length})</button>
+                        ` : ''}
+                    </div>
+                </div>
             </div>
         `;
+        
+        // Add collapsible section handlers
+        this.setupSidebarInteractions();
+    }
+    
+    getFolderIcon(folder) {
+        const icons = {
+            'All': '📂',
+            'Favorites': '⭐',
+            'Archive': '📦',
+            'Default': '📁'
+        };
+        return icons[folder] || '📁';
+    }
+    
+    getRecentPrompts(limit = 3) {
+        return this.state.prompts
+            .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+            .slice(0, limit);
+    }
+    
+    getCategoryStats() {
+        const stats = {};
+        this.state.prompts.forEach(prompt => {
+            if (prompt.category !== 'All') {
+                stats[prompt.category] = (stats[prompt.category] || 0) + 1;
+            }
+        });
+        return stats;
+    }
+    
+    getPromptsThisWeek() {
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        return this.state.prompts.filter(prompt => 
+            new Date(prompt.createdAt) > weekAgo
+        ).length;
+    }
+    
+    getAverageRating() {
+        if (this.state.prompts.length === 0) return 0;
+        const totalRating = this.state.prompts.reduce((sum, prompt) => sum + (prompt.rating || 0), 0);
+        return totalRating / this.state.prompts.length;
+    }
+    
+    getTagCount(tag) {
+        return this.state.prompts.filter(prompt => prompt.tags.includes(tag)).length;
+    }
+    
+    getRelativeTime(dateString) {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffInHours = Math.floor((now - date) / (1000 * 60 * 60));
+        
+        if (diffInHours < 1) return 'now';
+        if (diffInHours < 24) return `${diffInHours}h ago`;
+        const diffInDays = Math.floor(diffInHours / 24);
+        if (diffInDays < 7) return `${diffInDays}d ago`;
+        return date.toLocaleDateString();
+    }
+    
+    getSidebarSectionState(section) {
+        const sidebarState = JSON.parse(localStorage.getItem('nlp_sidebar_state') || '{}');
+        return sidebarState[section] !== false; // Default to expanded
+    }
+    
+    setSidebarSectionState(section, expanded) {
+        const sidebarState = JSON.parse(localStorage.getItem('nlp_sidebar_state') || '{}');
+        sidebarState[section] = expanded;
+        localStorage.setItem('nlp_sidebar_state', JSON.stringify(sidebarState));
+    }
+    
+    setupSidebarInteractions() {
+        // Section collapsing
+        document.querySelectorAll('.section-header').forEach(header => {
+            header.addEventListener('click', (e) => {
+                const section = header.dataset.section;
+                const sectionElement = header.closest('.sidebar-section');
+                const isExpanded = sectionElement.classList.contains('expanded');
+                
+                if (isExpanded) {
+                    sectionElement.classList.remove('expanded');
+                    sectionElement.classList.add('collapsed');
+                } else {
+                    sectionElement.classList.remove('collapsed');
+                    sectionElement.classList.add('expanded');
+                }
+                
+                this.setSidebarSectionState(section, !isExpanded);
+                header.querySelector('.section-toggle').textContent = isExpanded ? '+' : '−';
+            });
+        });
+        
+        // Recent prompt clicks
+        document.querySelectorAll('.recent-prompt-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                const promptId = item.dataset.id;
+                this.state.editingPromptId = promptId;
+                this.switchView('prompts');
+                this.render();
+            });
+        });
+        
+        // Mini stat clicks
+        document.querySelectorAll('.mini-stat').forEach(stat => {
+            stat.addEventListener('click', (e) => {
+                const category = stat.dataset.category;
+                this.state.activeCategory = category;
+                this.updateFilteredPrompts();
+                this.render();
+            });
+        });
     }
 
     getFolderCounts() {
@@ -665,6 +890,26 @@ class NLPPromptDatabase {
                                onchange="app.togglePromptSelection('${prompt.id}', event)">
                     </div>
                 ` : ''}
+                
+                <!-- Quick Actions Overlay -->
+                <div class="quick-actions-overlay">
+                    <button class="quick-action-btn copy" data-action="copy" data-id="${prompt.id}" data-tooltip="Copy">
+                        📋
+                    </button>
+                    <button class="quick-action-btn favorite ${prompt.folder === 'Favorites' ? 'active' : ''}" 
+                            data-action="favorite" data-id="${prompt.id}" data-tooltip="Favorite">
+                        ${prompt.folder === 'Favorites' ? '★' : '☆'}
+                    </button>
+                    <button class="quick-action-btn duplicate" data-action="duplicate" data-id="${prompt.id}" data-tooltip="Duplicate">
+                        📄
+                    </button>
+                    <button class="quick-action-btn edit" data-action="edit" data-id="${prompt.id}" data-tooltip="Edit">
+                        ✏️
+                    </button>
+                    <button class="quick-action-btn delete" data-action="delete" data-id="${prompt.id}" data-tooltip="Delete">
+                        🗑️
+                    </button>
+                </div>
                 
                 <div class="card-header">
                     <div class="header-left">
@@ -1223,14 +1468,14 @@ class NLPPromptDatabase {
             this.updatePromptRating(id, rating);
         }
         
-        if (target.matches('.action-btn')) {
+        if (target.matches('.action-btn') || target.matches('.quick-action-btn')) {
             e.stopPropagation();
             const action = target.dataset.action;
             const id = target.dataset.id;
             this.handlePromptAction(action, id);
         }
         
-        if (target.matches('.prompt-card') && !target.closest('.card-actions') && !target.closest('.rating-stars') && !target.closest('.select-checkbox')) {
+        if (target.matches('.prompt-card') && !target.closest('.card-actions') && !target.closest('.rating-stars') && !target.closest('.select-checkbox') && !target.closest('.quick-actions-overlay')) {
             const id = target.dataset.id || target.closest('.prompt-card').dataset.id;
             if (this.state.bulkMode && (e.metaKey || e.ctrlKey || e.shiftKey)) {
                 this.togglePromptSelection(id, e);
@@ -1359,11 +1604,263 @@ class NLPPromptDatabase {
         }
     }
 
-    handleInput(e) {
-        if (e.target.matches('#search-input')) {
-            this.state.searchTerm = e.target.value;
+    setupEnhancedSearch() {
+        this.searchState = {
+            recentSearches: JSON.parse(localStorage.getItem('nlp_recent_searches') || '[]'),
+            selectedSuggestionIndex: -1,
+            suggestionCache: new Map(),
+            debounceTimer: null
+        };
+        
+        const searchInput = document.getElementById('search-input');
+        if (!searchInput) return;
+        
+        // Enhanced input handling
+        searchInput.addEventListener('focus', () => this.showSearchSuggestions());
+        searchInput.addEventListener('blur', (e) => {
+            // Delay hiding to allow clicking on suggestions
+            setTimeout(() => this.hideSearchSuggestions(), 150);
+        });
+        
+        searchInput.addEventListener('keydown', (e) => {
+            this.handleSearchKeydown(e);
+        });
+    }
+    
+    showSearchSuggestions() {
+        const searchInput = document.getElementById('search-input');
+        const suggestions = document.getElementById('search-suggestions');
+        
+        if (!searchInput || !suggestions) return;
+        
+        const rect = searchInput.getBoundingClientRect();
+        suggestions.style.top = `${rect.bottom}px`;
+        suggestions.style.left = `${rect.left}px`;
+        suggestions.style.width = `${rect.width}px`;
+        suggestions.style.display = 'block';
+        
+        this.updateSearchSuggestions(searchInput.value);
+    }
+    
+    hideSearchSuggestions() {
+        const suggestions = document.getElementById('search-suggestions');
+        if (suggestions) {
+            suggestions.style.display = 'none';
+        }
+        this.searchState.selectedSuggestionIndex = -1;
+    }
+    
+    updateSearchSuggestions(query) {
+        const recentSearches = document.getElementById('recent-searches');
+        const quickFilters = document.getElementById('quick-filters');
+        const autocomplete = document.getElementById('search-autocomplete');
+        
+        if (!recentSearches || !quickFilters || !autocomplete) return;
+        
+        // Recent searches
+        const filteredRecent = this.searchState.recentSearches
+            .filter(search => search.toLowerCase().includes(query.toLowerCase()))
+            .slice(0, 3);
+            
+        recentSearches.innerHTML = filteredRecent.map(search => `
+            <div class="suggestion-item" data-type="recent" data-value="${search}">
+                <span class="suggestion-icon">🕒</span>
+                <span class="suggestion-text">${this.highlightMatch(search, query)}</span>
+            </div>
+        `).join('');
+        
+        // Quick filters
+        const filters = [
+            { text: 'rating:5', description: 'High rated prompts', icon: '⭐' },
+            { text: 'category:Code', description: 'Code prompts', icon: '💻' },
+            { text: 'folder:Favorites', description: 'Favorite prompts', icon: '❤️' },
+            { text: 'tag:javascript', description: 'JavaScript related', icon: '🏷️' },
+            { text: 'has:notes', description: 'With notes', icon: '📝' }
+        ];
+        
+        const matchingFilters = filters
+            .filter(f => f.text.toLowerCase().includes(query.toLowerCase()) || 
+                        f.description.toLowerCase().includes(query.toLowerCase()))
+            .slice(0, 3);
+            
+        quickFilters.innerHTML = matchingFilters.map(filter => `
+            <div class="suggestion-item" data-type="filter" data-value="${filter.text}">
+                <span class="suggestion-icon">${filter.icon}</span>
+                <span class="suggestion-text">${this.highlightMatch(filter.text, query)}</span>
+                <span class="suggestion-description">${filter.description}</span>
+            </div>
+        `).join('');
+        
+        // Auto-complete based on existing data
+        const suggestions = this.generateAutocompleteSuggestions(query).slice(0, 4);
+        autocomplete.innerHTML = suggestions.map(suggestion => `
+            <div class="suggestion-item" data-type="autocomplete" data-value="${suggestion.value}">
+                <span class="suggestion-icon">${suggestion.icon}</span>
+                <span class="suggestion-text">${this.highlightMatch(suggestion.text, query)}</span>
+                ${suggestion.count ? `<span class="suggestion-description">${suggestion.count} results</span>` : ''}
+            </div>
+        `).join('');
+        
+        // Add click handlers
+        document.querySelectorAll('.suggestion-item').forEach((item, index) => {
+            item.addEventListener('click', () => {
+                this.applySuggestion(item.dataset.value);
+            });
+        });
+    }
+    
+    generateAutocompleteSuggestions(query) {
+        const suggestions = [];
+        const queryLower = query.toLowerCase();
+        
+        if (queryLower.length < 2) return suggestions;
+        
+        // Tag suggestions
+        this.state.allTags.forEach(tag => {
+            if (tag.toLowerCase().includes(queryLower)) {
+                const count = this.state.prompts.filter(p => p.tags.includes(tag)).length;
+                suggestions.push({
+                    text: `tag:${tag}`,
+                    value: `tag:${tag}`,
+                    icon: '🏷️',
+                    count
+                });
+            }
+        });
+        
+        // Category suggestions
+        this.state.categories.forEach(category => {
+            if (category.toLowerCase().includes(queryLower) && category !== 'All') {
+                const count = this.state.prompts.filter(p => p.category === category).length;
+                suggestions.push({
+                    text: `category:${category}`,
+                    value: `category:${category}`,
+                    icon: '📂',
+                    count
+                });
+            }
+        });
+        
+        // Content suggestions
+        const words = this.state.prompts
+            .flatMap(p => p.text.toLowerCase().split(/\s+/))
+            .filter(word => word.length > 3 && word.includes(queryLower))
+            .reduce((acc, word) => {
+                acc[word] = (acc[word] || 0) + 1;
+                return acc;
+            }, {});
+            
+        Object.entries(words)
+            .sort(([,a], [,b]) => b - a)
+            .slice(0, 3)
+            .forEach(([word, count]) => {
+                suggestions.push({
+                    text: word,
+                    value: word,
+                    icon: '💬',
+                    count
+                });
+            });
+        
+        return suggestions.slice(0, 6);
+    }
+    
+    highlightMatch(text, query) {
+        if (!query) return text;
+        
+        const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+        return text.replace(regex, '<span class="search-highlight">$1</span>');
+    }
+    
+    handleSearchKeydown(e) {
+        const suggestions = document.querySelectorAll('.suggestion-item');
+        const suggestionsContainer = document.getElementById('search-suggestions');
+        
+        if (!suggestionsContainer || suggestionsContainer.style.display === 'none') return;
+        
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault();
+                this.searchState.selectedSuggestionIndex = 
+                    Math.min(this.searchState.selectedSuggestionIndex + 1, suggestions.length - 1);
+                this.updateSuggestionSelection();
+                break;
+                
+            case 'ArrowUp':
+                e.preventDefault();
+                this.searchState.selectedSuggestionIndex = 
+                    Math.max(this.searchState.selectedSuggestionIndex - 1, -1);
+                this.updateSuggestionSelection();
+                break;
+                
+            case 'Enter':
+                if (this.searchState.selectedSuggestionIndex >= 0) {
+                    e.preventDefault();
+                    const selectedSuggestion = suggestions[this.searchState.selectedSuggestionIndex];
+                    this.applySuggestion(selectedSuggestion.dataset.value);
+                }
+                break;
+                
+            case 'Escape':
+                e.preventDefault();
+                this.hideSearchSuggestions();
+                break;
+        }
+    }
+    
+    updateSuggestionSelection() {
+        const suggestions = document.querySelectorAll('.suggestion-item');
+        suggestions.forEach((item, index) => {
+            item.classList.toggle('selected', index === this.searchState.selectedSuggestionIndex);
+        });
+    }
+    
+    applySuggestion(value) {
+        const searchInput = document.getElementById('search-input');
+        if (searchInput) {
+            searchInput.value = value;
+            this.state.searchTerm = value;
+            
+            // Add to recent searches
+            this.addToRecentSearches(value);
+            
             this.updateFilteredPrompts();
             this.render();
+        }
+        this.hideSearchSuggestions();
+    }
+    
+    addToRecentSearches(search) {
+        if (!search || search.length < 2) return;
+        
+        // Remove if already exists
+        this.searchState.recentSearches = this.searchState.recentSearches.filter(s => s !== search);
+        
+        // Add to beginning
+        this.searchState.recentSearches.unshift(search);
+        
+        // Keep only last 10
+        this.searchState.recentSearches = this.searchState.recentSearches.slice(0, 10);
+        
+        // Save to localStorage
+        localStorage.setItem('nlp_recent_searches', JSON.stringify(this.searchState.recentSearches));
+    }
+
+    handleInput(e) {
+        if (e.target.matches('#search-input')) {
+            clearTimeout(this.searchState?.debounceTimer);
+            
+            const value = e.target.value;
+            this.state.searchTerm = value;
+            
+            // Debounced search with suggestions
+            this.searchState.debounceTimer = setTimeout(() => {
+                this.updateFilteredPrompts();
+                this.render();
+                if (value.length > 0) {
+                    this.updateSearchSuggestions(value);
+                }
+            }, 200);
         }
         
         if (e.target.matches('#openai-api-key')) {
@@ -1590,7 +2087,223 @@ class NLPPromptDatabase {
         }
     }
 
-    showToast(message, type = 'success') {
+    setupCommandPalette() {
+        const commandPalette = document.getElementById('command-palette');
+        const commandInput = document.getElementById('command-input');
+        const commandResults = document.getElementById('command-results');
+        
+        if (!commandPalette || !commandInput || !commandResults) return;
+        
+        this.commandPaletteState = {
+            isOpen: false,
+            selectedIndex: 0,
+            commands: [],
+            filteredCommands: []
+        };
+        
+        // Click backdrop to close
+        commandPalette.querySelector('.command-palette-backdrop')?.addEventListener('click', () => {
+            this.hideCommandPalette();
+        });
+        
+        // Handle input
+        commandInput.addEventListener('input', (e) => {
+            this.filterCommands(e.target.value);
+        });
+        
+        // Handle keyboard navigation
+        commandInput.addEventListener('keydown', (e) => {
+            this.handleCommandPaletteKeydown(e);
+        });
+        
+        // Click on command items
+        commandResults.addEventListener('click', (e) => {
+            const commandItem = e.target.closest('.command-item');
+            if (commandItem) {
+                this.executeCommand(commandItem.dataset.action, commandItem.dataset);
+            }
+        });
+        
+        // Initialize commands
+        this.initializeCommands();
+    }
+    
+    initializeCommands() {
+        this.commandPaletteState.commands = [
+            { action: 'add-prompt', text: 'Add New Prompt', icon: '➕', shortcut: '⌘N', category: 'Quick Actions' },
+            { action: 'export', text: 'Export Data', icon: '💾', shortcut: '⌘S', category: 'Quick Actions' },
+            { action: 'backup', text: 'Create Backup', icon: '🔒', shortcut: '', category: 'Quick Actions' },
+            { action: 'import', text: 'Import Data', icon: '📁', shortcut: '', category: 'Quick Actions' },
+            { action: 'view-prompts', text: 'View Prompts', icon: '📝', shortcut: '⌘1', category: 'Navigation' },
+            { action: 'view-categories', text: 'View Categories', icon: '🏷️', shortcut: '⌘2', category: 'Navigation' },
+            { action: 'view-analytics', text: 'View Analytics', icon: '📊', shortcut: '⌘4', category: 'Navigation' },
+            { action: 'view-settings', text: 'View Settings', icon: '⚙️', shortcut: '⌘5', category: 'Navigation' },
+            { action: 'search-focus', text: 'Focus Search', icon: '🔍', shortcut: '⌘F', category: 'Navigation' },
+            { action: 'bulk-mode', text: 'Toggle Bulk Mode', icon: '☑️', shortcut: '⌘B', category: 'Selection' },
+            { action: 'select-all', text: 'Select All', icon: '✅', shortcut: '⌘A', category: 'Selection' },
+            { action: 'help', text: 'Show Keyboard Shortcuts', icon: '❓', shortcut: '?', category: 'Help' }
+        ];
+    }
+    
+    toggleCommandPalette() {
+        if (this.commandPaletteState.isOpen) {
+            this.hideCommandPalette();
+        } else {
+            this.showCommandPalette();
+        }
+    }
+    
+    showCommandPalette() {
+        const commandPalette = document.getElementById('command-palette');
+        const commandInput = document.getElementById('command-input');
+        
+        if (!commandPalette || !commandInput) return;
+        
+        this.commandPaletteState.isOpen = true;
+        commandPalette.style.display = 'flex';
+        
+        // Reset state
+        commandInput.value = '';
+        this.commandPaletteState.selectedIndex = 0;
+        this.filterCommands('');
+        
+        // Focus input
+        setTimeout(() => commandInput.focus(), 100);
+    }
+    
+    hideCommandPalette() {
+        const commandPalette = document.getElementById('command-palette');
+        if (!commandPalette) return;
+        
+        this.commandPaletteState.isOpen = false;
+        commandPalette.style.display = 'none';
+    }
+    
+    filterCommands(query) {
+        const searchTerm = query.toLowerCase();
+        
+        if (searchTerm === '') {
+            this.commandPaletteState.filteredCommands = [...this.commandPaletteState.commands];
+        } else {
+            this.commandPaletteState.filteredCommands = this.commandPaletteState.commands.filter(cmd =>
+                cmd.text.toLowerCase().includes(searchTerm) ||
+                cmd.category.toLowerCase().includes(searchTerm)
+            );
+        }
+        
+        this.commandPaletteState.selectedIndex = 0;
+        this.renderCommandResults();
+    }
+    
+    renderCommandResults() {
+        const commandResults = document.getElementById('command-results');
+        if (!commandResults) return;
+        
+        // Group commands by category
+        const grouped = this.commandPaletteState.filteredCommands.reduce((acc, cmd, index) => {
+            if (!acc[cmd.category]) {
+                acc[cmd.category] = [];
+            }
+            acc[cmd.category].push({ ...cmd, originalIndex: index });
+            return acc;
+        }, {});
+        
+        const html = Object.entries(grouped).map(([category, commands]) => `
+            <div class="command-section">
+                <div class="command-section-title">${category}</div>
+                ${commands.map(cmd => `
+                    <div class="command-item ${cmd.originalIndex === this.commandPaletteState.selectedIndex ? 'selected' : ''}" 
+                         data-action="${cmd.action}">
+                        <span class="command-icon">${cmd.icon}</span>
+                        <span class="command-text">${cmd.text}</span>
+                        ${cmd.shortcut ? `<span class="command-shortcut">${cmd.shortcut}</span>` : ''}
+                    </div>
+                `).join('')}
+            </div>
+        `).join('');
+        
+        commandResults.innerHTML = html;
+    }
+    
+    handleCommandPaletteKeydown(e) {
+        const filteredCount = this.commandPaletteState.filteredCommands.length;
+        
+        switch (e.key) {
+            case 'Escape':
+                e.preventDefault();
+                this.hideCommandPalette();
+                break;
+                
+            case 'ArrowDown':
+                e.preventDefault();
+                this.commandPaletteState.selectedIndex = 
+                    (this.commandPaletteState.selectedIndex + 1) % filteredCount;
+                this.renderCommandResults();
+                break;
+                
+            case 'ArrowUp':
+                e.preventDefault();
+                this.commandPaletteState.selectedIndex = 
+                    (this.commandPaletteState.selectedIndex - 1 + filteredCount) % filteredCount;
+                this.renderCommandResults();
+                break;
+                
+            case 'Enter':
+                e.preventDefault();
+                if (filteredCount > 0) {
+                    const selectedCommand = this.commandPaletteState.filteredCommands[this.commandPaletteState.selectedIndex];
+                    this.executeCommand(selectedCommand.action);
+                }
+                break;
+        }
+    }
+    
+    executeCommand(action, data = {}) {
+        this.hideCommandPalette();
+        
+        switch (action) {
+            case 'add-prompt':
+                this.showQuickAddModal();
+                break;
+            case 'export':
+                this.exportData();
+                break;
+            case 'backup':
+                this.createBackup();
+                break;
+            case 'import':
+                this.triggerImport();
+                break;
+            case 'view-prompts':
+                this.switchView('prompts');
+                break;
+            case 'view-categories':
+                this.switchView('categories');
+                break;
+            case 'view-analytics':
+                this.switchView('analytics');
+                break;
+            case 'view-settings':
+                this.switchView('settings');
+                break;
+            case 'search-focus':
+                document.getElementById('search-input')?.focus();
+                break;
+            case 'bulk-mode':
+                this.toggleBulkMode();
+                break;
+            case 'select-all':
+                this.selectAllPrompts();
+                break;
+            case 'help':
+                this.showShortcutsModal();
+                break;
+            default:
+                this.showToast(`Command "${action}" not implemented`, 'warning');
+        }
+    }
+
+    showToast(message, type = 'success', duration = 3000) {
         const container = document.getElementById('toast-container');
         if (!container) return;
 
@@ -1598,13 +2311,96 @@ class NLPPromptDatabase {
         toast.className = `toast ${type}`;
         toast.textContent = message;
         
+        // Add click to dismiss
+        toast.addEventListener('click', () => {
+            this.dismissToast(toast);
+        });
+        
+        // Add hover pause functionality
+        let timeoutId;
+        let remainingTime = duration;
+        let startTime = Date.now();
+        
+        const startTimer = (time) => {
+            timeoutId = setTimeout(() => {
+                this.dismissToast(toast);
+            }, time);
+        };
+        
+        toast.addEventListener('mouseenter', () => {
+            clearTimeout(timeoutId);
+            remainingTime = remainingTime - (Date.now() - startTime);
+        });
+        
+        toast.addEventListener('mouseleave', () => {
+            startTime = Date.now();
+            startTimer(remainingTime);
+        });
+        
         container.appendChild(toast);
         
+        // Show animation
         setTimeout(() => toast.classList.add('show'), 10);
+        
+        // Start auto-dismiss timer
+        startTime = Date.now();
+        startTimer(duration);
+        
+        // Auto-cleanup old toasts if too many
+        const toasts = container.querySelectorAll('.toast');
+        if (toasts.length > 5) {
+            this.dismissToast(toasts[0]);
+        }
+    }
+    
+    dismissToast(toast) {
+        if (!toast || !toast.parentNode) return;
+        
+        toast.classList.remove('show');
         setTimeout(() => {
-            toast.classList.remove('show');
-            setTimeout(() => container.removeChild(toast), 300);
-        }, 3000);
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        }, 300);
+    }
+    
+    showToastWithActions(message, type = 'info', actions = []) {
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+
+        const toast = document.createElement('div');
+        toast.className = `toast ${type} with-actions`;
+        
+        const messageSpan = document.createElement('span');
+        messageSpan.textContent = message;
+        messageSpan.className = 'toast-message';
+        toast.appendChild(messageSpan);
+        
+        if (actions.length > 0) {
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'toast-actions';
+            
+            actions.forEach(action => {
+                const button = document.createElement('button');
+                button.textContent = action.text;
+                button.className = 'toast-action-btn';
+                button.addEventListener('click', () => {
+                    action.handler();
+                    this.dismissToast(toast);
+                });
+                actionsDiv.appendChild(button);
+            });
+            
+            toast.appendChild(actionsDiv);
+        }
+        
+        container.appendChild(toast);
+        setTimeout(() => toast.classList.add('show'), 10);
+        
+        // Auto-dismiss after longer duration for action toasts
+        setTimeout(() => {
+            this.dismissToast(toast);
+        }, 5000);
     }
 
     async showSummaryModal() {
@@ -2685,6 +3481,86 @@ Provide 3-4 key insights about usage patterns, popular categories, and recommend
         }
         
         this.showLoadingIndicator(false);
+    }
+
+    // Show duplicate detection modal
+    showDuplicateModal(skippedPrompts) {
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal duplicate-modal">
+                <h2>⚠️ Duplicate Prompts Detected</h2>
+                <p>The following prompts were skipped because they already exist:</p>
+                <div class="duplicate-list">
+                    ${skippedPrompts.map(item => `
+                        <div class="duplicate-item">
+                            <div class="duplicate-text">${this.truncateText(item.text, 100)}</div>
+                            <div class="duplicate-matches">
+                                <strong>Similar to:</strong>
+                                ${item.duplicates.map(dup => `
+                                    <div class="match-item">
+                                        <span class="match-text">${this.truncateText(dup.text, 80)}</span>
+                                        <span class="match-category">${dup.category}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-secondary" onclick="this.parentElement.parentElement.remove();">Close</button>
+                    <button class="btn-primary" onclick="app.handleDuplicateOverride(${JSON.stringify(skippedPrompts).replace(/"/g, '&quot;')}); this.parentElement.parentElement.remove();">Add Anyway</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // Close modal when clicking outside
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
+    }
+
+    // Handle user choosing to override duplicate detection
+    async handleDuplicateOverride(skippedPrompts) {
+        this.showLoadingIndicator(true, 'Adding prompts...');
+        
+        try {
+            const addedPrompts = [];
+            
+            for (const item of skippedPrompts) {
+                // Force add without duplicate check
+                const newPrompt = await this.db.addPromptForced({
+                    text: item.text,
+                    category: 'General',
+                    tags: [],
+                    folder: 'Default',
+                    rating: 0,
+                    notes: 'Added as duplicate override'
+                });
+                
+                addedPrompts.push(newPrompt);
+            }
+            
+            await this.loadData();
+            this.showToast(`Added ${addedPrompts.length} prompts (duplicates overridden)`, 'success');
+        } catch (error) {
+            console.error('Failed to add duplicate prompts:', error);
+            this.showToast('Failed to add prompts', 'error');
+        } finally {
+            this.showLoadingIndicator(false);
+        }
+    }
+
+    // Helper method to truncate text
+    truncateText(text, maxLength) {
+        if (text.length <= maxLength) {
+            return text;
+        }
+        return text.substring(0, maxLength) + '...';
     }
 
     // Utility methods for safe DOM operations

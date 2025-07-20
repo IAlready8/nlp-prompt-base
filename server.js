@@ -2,14 +2,29 @@ const express = require('express');
 const fs = require('fs').promises;
 const path = require('path');
 const cors = require('cors');
+const config = require('./src/config');
+const logger = require('./src/utils/logger');
+const { 
+    validatePromptData, 
+    validatePromptId, 
+    validateBulkOperations, 
+    sanitizeInput, 
+    rateLimiter, 
+    errorHandler 
+} = require('./src/middleware/validation');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
-const DATA_FILE = path.join(__dirname, 'data', 'prompts.json');
+const PORT = config.server.port;
+const DATA_FILE = path.resolve(__dirname, config.database.dataFilePath);
 
-app.use(cors());
+app.use(cors({ origin: config.security.corsOrigin }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
+app.use(sanitizeInput);
+
+if (config.security.rateLimitEnabled) {
+    app.use(rateLimiter());
+}
 
 // Auto-save middleware with debouncing
 let saveTimeout;
@@ -57,7 +72,7 @@ app.get('/api/data', async (req, res) => {
 });
 
 // Save data to file with auto-save
-app.post('/api/data', async (req, res) => {
+app.post('/api/data', validatePromptData, async (req, res) => {
     try {
         const data = req.body;
         data.metadata.lastSaved = new Date().toISOString();
@@ -108,7 +123,7 @@ app.post('/api/backup', async (req, res) => {
 });
 
 // Individual prompt endpoints
-app.put('/api/prompts/:id', async (req, res) => {
+app.put('/api/prompts/:id', validatePromptId, async (req, res) => {
     try {
         const data = await fs.readFile(DATA_FILE, 'utf8');
         const jsonData = JSON.parse(data);
@@ -131,7 +146,7 @@ app.put('/api/prompts/:id', async (req, res) => {
     }
 });
 
-app.delete('/api/prompts/:id', async (req, res) => {
+app.delete('/api/prompts/:id', validatePromptId, async (req, res) => {
     try {
         const data = await fs.readFile(DATA_FILE, 'utf8');
         const jsonData = JSON.parse(data);
@@ -155,7 +170,7 @@ app.delete('/api/prompts/:id', async (req, res) => {
 });
 
 // Bulk operations
-app.delete('/api/prompts/batch', async (req, res) => {
+app.delete('/api/prompts/batch', validateBulkOperations, async (req, res) => {
     try {
         const data = await fs.readFile(DATA_FILE, 'utf8');
         const jsonData = JSON.parse(data);
@@ -185,7 +200,7 @@ app.delete('/api/prompts/batch', async (req, res) => {
     }
 });
 
-app.put('/api/prompts/batch', async (req, res) => {
+app.put('/api/prompts/batch', validateBulkOperations, async (req, res) => {
     try {
         const data = await fs.readFile(DATA_FILE, 'utf8');
         const jsonData = JSON.parse(data);
@@ -277,8 +292,16 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.listen(PORT, () => {
-    console.log(`🚀 NLP Prompt Database server running on http://localhost:${PORT}`);
+app.use(errorHandler);
+
+app.listen(PORT, config.server.host, () => {
+    logger.info(`NLP Prompt Database server started`, {
+        host: config.server.host,
+        port: PORT,
+        dataFile: DATA_FILE,
+        environment: config.server.nodeEnv
+    });
+    console.log(`🚀 NLP Prompt Database server running on http://${config.server.host}:${PORT}`);
     console.log(`📁 Data file: ${DATA_FILE}`);
 });
 

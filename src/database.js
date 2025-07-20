@@ -106,11 +106,79 @@ class LocalJSONDatabase {
         }
     }
 
+    // Generate unique ID with duplicate prevention
+    generateUniqueId() {
+        let id;
+        let attempts = 0;
+        const maxAttempts = 10;
+        
+        do {
+            const timestamp = Date.now();
+            const randomPart = Math.random().toString(36).substr(2, 9);
+            const counterPart = Math.random().toString(36).substr(2, 3);
+            id = `prompt_${timestamp}_${randomPart}_${counterPart}`;
+            attempts++;
+            
+            // Add small delay to ensure different timestamps if needed
+            if (attempts > 1) {
+                const now = Date.now();
+                while (Date.now() === now) {
+                    // Wait for next millisecond
+                }
+            }
+        } while (this.data.prompts.some(p => p.id === id) && attempts < maxAttempts);
+        
+        if (attempts >= maxAttempts) {
+            // Fallback to UUID-like generation
+            id = `prompt_${Date.now()}_${Math.random().toString(36).substr(2, 16)}`;
+        }
+        
+        return id;
+    }
+
+    // Check for duplicate prompts based on text similarity
+    checkForDuplicates(text, threshold = 0.9) {
+        const normalizedText = text.toLowerCase().trim().replace(/\s+/g, ' ');
+        
+        return this.data.prompts.filter(prompt => {
+            const normalizedPromptText = prompt.text.toLowerCase().trim().replace(/\s+/g, ' ');
+            
+            // Exact match
+            if (normalizedText === normalizedPromptText) {
+                return true;
+            }
+            
+            // Similarity check for near-duplicates
+            const similarity = this.calculateSimilarity(normalizedText, normalizedPromptText);
+            return similarity >= threshold;
+        });
+    }
+
+    // Simple similarity calculation (Jaccard similarity)
+    calculateSimilarity(str1, str2) {
+        const words1 = new Set(str1.split(' '));
+        const words2 = new Set(str2.split(' '));
+        
+        const intersection = new Set([...words1].filter(x => words2.has(x)));
+        const union = new Set([...words1, ...words2]);
+        
+        return intersection.size / union.size;
+    }
+
     async addPrompt(promptData) {
         if (!this.initialized) await this.init();
         
+        // Check for duplicates
+        const duplicates = this.checkForDuplicates(promptData.text);
+        if (duplicates.length > 0) {
+            const error = new Error('Duplicate prompt detected');
+            error.code = 'DUPLICATE_PROMPT';
+            error.duplicates = duplicates;
+            throw error;
+        }
+        
         const newPrompt = {
-            id: `prompt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            id: this.generateUniqueId(),
             text: promptData.text,
             category: promptData.category || 'General',
             tags: promptData.tags || [],
@@ -123,6 +191,33 @@ class LocalJSONDatabase {
             metadata: {
                 source: promptData.source || 'manual',
                 confidence: promptData.confidence || 1.0
+            }
+        };
+
+        this.data.prompts.unshift(newPrompt);
+        this.autoSave();
+        return newPrompt;
+    }
+
+    // Add prompt without duplicate checking (for override scenarios)
+    async addPromptForced(promptData) {
+        if (!this.initialized) await this.init();
+        
+        const newPrompt = {
+            id: this.generateUniqueId(),
+            text: promptData.text,
+            category: promptData.category || 'General',
+            tags: promptData.tags || [],
+            folder: promptData.folder || 'Default',
+            rating: promptData.rating || 0,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            usage_count: 0,
+            notes: promptData.notes || '',
+            metadata: {
+                source: promptData.source || 'manual',
+                confidence: promptData.confidence || 1.0,
+                duplicateOverride: true
             }
         };
 
