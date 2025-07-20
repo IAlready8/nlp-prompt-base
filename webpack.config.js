@@ -12,7 +12,7 @@ module.exports = {
     entry: {
         app: './public/app.js',
         database: './public/database.js',
-        openai: './public/openai-integration.js'
+        openai: './src/openai-integration.js'
     },
     
     output: {

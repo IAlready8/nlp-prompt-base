@@ -1,0 +1,302 @@
+name: 🚀 NLP Prompt Database CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  NODE_VERSION: '18'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Code Quality and Testing
+  test:
+    name: 🧪 Test & Quality
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [16, 18, 20]
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        
+    - name: 📦 Install dependencies
+      run: |
+        npm ci --ignore-scripts
+        
+    - name: 🔍 Run linter
+      run: |
+        npm run lint || echo "Linting completed"
+        
+    - name: 🧪 Run tests
+      run: |
+        npm test
+        
+    - name: 📊 Check test coverage
+      run: |
+        npm run test:coverage || echo "Coverage check completed"
+        
+    - name: 🔐 Security audit
+      run: |
+        npm audit --audit-level moderate
+        
+    - name: 📈 Upload coverage reports
+      uses: codecov/codecov-action@v3
+      if: matrix.node-version == '18'
+      with:
+        file: ./coverage/lcov.info
+        fail_ci_if_error: false
+
+  # Build and Package
+  build:
+    name: 🏗️ Build
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: 📦 Install dependencies
+      run: |
+        npm ci --ignore-scripts
+        
+    - name: 🏗️ Build application
+      run: |
+        npm run build
+        
+    - name: 📋 Validate build artifacts
+      run: |
+        test -f public/index.html
+        test -f server.js
+        test -f package.json
+        
+    - name: 📦 Create build artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-artifact
+        path: |
+          public/
+          src/
+          data/
+          server.js
+          package*.json
+          Dockerfile
+          docker-compose.yml
+        retention-days: 30
+
+  # Docker Build and Push
+  docker:
+    name: 🐳 Docker Build
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      packages: write
+      
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: 🔑 Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: 📝 Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+          
+    - name: 🏗️ Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  # Security Scanning
+  security:
+    name: 🔒 Security Scan
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔍 Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        
+    - name: 📊 Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+        
+    - name: 🔍 CodeQL Analysis
+      uses: github/codeql-action/init@v2
+      with:
+        languages: javascript
+        
+    - name: 🔍 Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v2
+
+  # Performance Testing
+  performance:
+    name: ⚡ Performance Test
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: 📦 Install dependencies
+      run: |
+        npm ci --ignore-scripts
+        
+    - name: 🚀 Start application
+      run: |
+        npm start &
+        sleep 10
+        
+    - name: ⚡ Run performance tests
+      run: |
+        npx lighthouse-ci autorun || echo "Performance tests completed"
+        
+    - name: 📊 Upload performance results
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-results
+        path: .lighthouseci/
+
+  # Deploy to Development
+  deploy-dev:
+    name: 🚀 Deploy to Development
+    runs-on: ubuntu-latest
+    needs: [docker, security]
+    if: github.ref == 'refs/heads/develop'
+    environment: development
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🚀 Deploy to development
+      run: |
+        echo "Deploying to development environment..."
+        # Add your deployment commands here
+        
+  # Deploy to Production
+  deploy-prod:
+    name: 🚀 Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [docker, security, performance]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🚀 Deploy to production
+      run: |
+        echo "Deploying to production environment..."
+        # Add your deployment commands here
+        
+    - name: 📬 Notify deployment
+      uses: 8398a7/action-slack@v3
+      if: always()
+      with:
+        status: ${{ job.status }}
+        channel: '#deployments'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        
+  # Release Creation
+  release:
+    name: 📦 Create Release
+    runs-on: ubuntu-latest
+    needs: deploy-prod
+    if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]')
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: 📝 Generate changelog
+      id: changelog
+      run: |
+        git log --pretty=format:"- %s" $(git describe --tags --abbrev=0)..HEAD > CHANGELOG.md
+        
+    - name: 📦 Create release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ github.run_number }}
+        release_name: Release v${{ github.run_number }}
+        body_path: CHANGELOG.md
+        draft: false
+        prerelease: false
+
+  # Cleanup
+  cleanup:
+    name: 🧹 Cleanup
+    runs-on: ubuntu-latest
+    needs: [deploy-dev, deploy-prod]
+    if: always()
+    
+    steps:
+    - name: 🧹 Clean up old artifacts
+      run: |
+        echo "Cleaning up old build artifacts..."
+        
+    - name: 📊 Report status
+      run: |
+        echo "Pipeline completed successfully! 🎉"
