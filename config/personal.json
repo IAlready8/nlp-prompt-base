@@ -1,0 +1,53 @@
+{
+  "database": {
+    "type": "sqlite",
+    "path": "./data/prompts.db",
+    "backupInterval": 60
+  },
+  "ai": {
+    "openaiKey": "",
+    "model": "gpt-3.5-turbo",
+    "autoCategorizationEnabled": true,
+    "batchSize": 5,
+    "requestDelay": 100
+  },
+  "ui": {
+    "theme": "dark",
+    "compactMode": false,
+    "animations": true,
+    "keyboardShortcuts": true,
+    "autoSave": true
+  },
+  "performance": {
+    "maxPromptsInMemory": 10000,
+    "enableIndexing": true,
+    "debugMode": false,
+    "enableAnalytics": true,
+    "cacheSize": 1000
+  },
+  "backup": {
+    "enabled": true,
+    "interval": 60,
+    "maxBackups": 10,
+    "autoCleanup": true,
+    "compression": false
+  },
+  "shortcuts": {
+    "quickNote": "cmd+shift+n",
+    "advancedSearch": "cmd+shift+f",
+    "createBackup": "cmd+shift+b",
+    "showInsights": "cmd+shift+i",
+    "commandPalette": "cmd+shift+p"
+  },
+  "automation": {
+    "autoCategorizationEnabled": true,
+    "duplicateDetection": true,
+    "smartSuggestions": true,
+    "workflowsEnabled": true
+  },
+  "privacy": {
+    "analytics": false,
+    "errorReporting": false,
+    "usageTracking": true
+  }
+}
