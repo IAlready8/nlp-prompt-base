@@ -235,6 +235,36 @@ npm run validate
 4. Test thoroughly
 5. Submit a pull request
 
+## 🚀 Deployment
+
+This application is ready to deploy to various platforms:
+
+### Vercel (Recommended)
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/yourusername/nlp-prompt-database)
+
+1. Connect your GitHub repository to Vercel
+2. Configure environment variables (optional):
+   - `OPENAI_API_KEY`: Your OpenAI API key
+   - `NODE_ENV`: Set to `production`
+3. Deploy with one click
+
+See **[DEPLOYMENT.md](./DEPLOYMENT.md)** for detailed deployment instructions for Vercel, Netlify, Heroku, Docker, and self-hosted options.
+
+### Quick Deploy Commands
+
+```bash
+# Deploy to Vercel (requires Vercel CLI)
+npm install -g vercel
+vercel
+
+# Build for production
+npm run build
+
+# Start production server
+npm start
+```
+
 ## 🔒 Privacy & Security
 
 - **Local Storage**: All data stored locally on your machine
