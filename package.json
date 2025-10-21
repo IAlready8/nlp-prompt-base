@@ -26,12 +26,13 @@
     "dev-simple": "node server.js",
     "serve": "live-server public --port=8000 --open=/",
     "serve-simple": "python3 -m http.server 8000 --directory public",
-    "build": "echo 'Building static assets...' && npm run lint",
+    "build": "echo 'Building static assets...' && npm run copy-vendor && npm run lint",
+    "vercel-build": "npm run copy-vendor || true",
     "lint": "echo 'Linting JavaScript files...'",
     "test": "mocha tests/run-tests.js",
     "test:watch": "mocha tests/run-tests.js --watch",
     "copy-vendor": "node copy-vendor.js",
-    "postinstall": "npm run copy-vendor",
+    "postinstall": "npm run copy-vendor || true",
     "backup": "curl -X POST http://localhost:3001/api/backup",
     "clean": "rm -rf dist/ .cache/",
     "format": "prettier --write 'public/**/*.{js,css,html}' 'src/**/*.js' 'server.js'",
@@ -50,7 +51,8 @@
     "chart.js": "^4.4.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.0",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "node-fetch": "^2.7.0"
   },
   "engines": {
     "node": ">=16.0.0",

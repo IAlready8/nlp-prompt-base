@@ -1,0 +1,61 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [16.x, 18.x, 20.x]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run linter
+      run: npm run lint
+
+    - name: Run tests
+      run: npm test
+
+    - name: Build project
+      run: npm run build
+
+    - name: Verify build artifacts
+      run: |
+        test -f public/vendor/chart.js || echo "Warning: chart.js not found"
+        test -f public/vendor/sortable.js || echo "Warning: sortable.js not found"
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Build Docker image
+      run: docker build -t nlp-prompt-db:test .
+
+    - name: Test Docker image
+      run: |
+        docker run -d -p 3001:3001 --name test-container nlp-prompt-db:test
+        sleep 5
+        curl -f http://localhost:3001/api/health || exit 1
+        docker stop test-container
+        docker rm test-container
