@@ -174,9 +174,16 @@ $RECYCLE.BIN/
 backups/*.json
 !backups/.gitkeep
 
+# Vendor libraries (downloaded at build time)
+public/vendor/*.js
+public/vendor/*.css
+!public/vendor/.gitkeep
+
 # Distribution / build outputs
 dist/
 .cache/
+.vercel/
+.output/
 
 # IDE files
 .vscode/
